@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+faces/
+exports/
+attendance.db
+.vscode/
+.idea/
