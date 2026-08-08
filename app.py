@@ -9,6 +9,9 @@ import pandas as pd
 from flask import send_file
 import pyttsx3
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 app = Flask(__name__)
 app.secret_key = "jabil_face_attendance_2026"
 
