@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jabil Camera</title>
+</head>
+
+<body>
+    {% include "navbar.html" %}
+
+    <h1>📷 Jabil Face Registration</h1>
+
+    <video id="video" width="640" height="480" autoplay></video>
+
+    <br><br>
+
+    <button onclick="startCamera()">Start Camera</button>
+
+
+
+    <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
+
+    <script>
+
+        async function startCamera() {
+    
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: true
+            });
+    
+            document.getElementById("video").srcObject = stream;
+    
+            setInterval(capturePhoto, 5000);
+    
+        }
+    
+        async function capturePhoto() {
+    
+            const video = document.getElementById("video");
+            const canvas = document.getElementById("canvas");
+    
+            const context = canvas.getContext("2d");
+    
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+            const image = canvas.toDataURL("image/jpeg");
+    
+            const response = await fetch("/recognize", {
+    
+                method: "POST",
+    
+                headers: {
+                    "Content-Type": "application/json"
+                },
+    
+                body: JSON.stringify({
+                    image: image
+                })
+    
+            });
+    
+            const result = await response.json();
+    
+            if (result.success) {
+    
+                alert(result.message);
+    
+            }
+    
+        }
+    
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

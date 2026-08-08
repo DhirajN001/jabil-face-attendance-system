@@ -1,15 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Face Attendance System</title>
+
+    <title>Jabil Face Attendance Login</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet">
 
     <style>
+
         body{
-            background: linear-gradient(135deg,#0f172a,#2563eb);
+            background:linear-gradient(135deg,#0f172a,#2563eb);
             height:100vh;
             display:flex;
             justify-content:center;
@@ -24,6 +29,11 @@
             box-shadow:0 10px 30px rgba(0,0,0,.3);
         }
 
+        .logo{
+            font-size:60px;
+            text-align:center;
+        }
+
         h2{
             text-align:center;
             margin-bottom:25px;
@@ -34,41 +44,66 @@
             width:100%;
         }
 
-        .logo{
-            font-size:60px;
-            text-align:center;
-            margin-bottom:10px;
-        }
     </style>
 
 </head>
+
 <body>
 
 <div class="login-box">
 
-<div class="logo">
-📷
-</div>
+    <div class="logo">
 
-<h2>Face Attendance</h2>
+        👤
 
-<form action="/dashboard">
+    </div>
 
-<div class="mb-3">
-<input type="text" class="form-control" placeholder="Username">
-</div>
+    <h2>Jabil Face Attendance</h2>
 
-<div class="mb-3">
-<input type="password" class="form-control" placeholder="Password">
-</div>
+    <form action="/login" method="POST">
 
-<button class="btn btn-primary">
-Login
-</button>
+        <div class="mb-3">
 
-</form>
+            <label class="form-label">
+
+                Username
+
+            </label>
+
+            <input
+                type="text"
+                name="username"
+                class="form-control"
+                required>
+
+        </div>
+
+        <div class="mb-3">
+
+            <label class="form-label">
+
+                Password
+
+            </label>
+
+            <input
+                type="password"
+                name="password"
+                class="form-control"
+                required>
+
+        </div>
+
+        <button class="btn btn-primary">
+
+            Login
+
+        </button>
+
+    </form>
 
 </div>
 
 </body>
+
 </html>
