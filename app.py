@@ -28,6 +28,7 @@ def init_database():
             name TEXT NOT NULL,
             department TEXT,
             mobile TEXT
+            face_descriptor TEXT
         )
     """)
 
@@ -41,10 +42,54 @@ def init_database():
             status TEXT NOT NULL
         )
     """)
-
+    try:
+        cursor.execute(
+        "ALTER TABLE employees ADD COLUMN face_descriptor TEXT"
+    )
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 init_database()
+
+@app.route("/recognize_face", methods=["POST"])
+def recognize_face():
+
+    try:
+
+        data = request.json
+
+        descriptor = data["descriptor"]
+
+        # Existing employee face files
+        for file_name in os.listdir("faces"):
+
+            if not file_name.lower().endswith(".jpg"):
+                continue
+
+            emp_id = file_name.rsplit(".", 1)[0]
+
+            # Temporary response for testing
+            # Actual descriptor comparison will be added next
+
+            return jsonify({
+                "success": False,
+                "message": "Face recognition setup is ready"
+            })
+
+        return jsonify({
+            "success": False,
+            "message": "No employee face found"
+        })
+
+    except Exception as e:
+
+        print("Face recognition error:", e)
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        })
 
 
 @app.route("/recognize", methods=["POST"])
@@ -327,25 +372,77 @@ def save_employee():
 @app.route("/save_photo", methods=["POST"])
 def save_photo():
 
-    data = request.get_json()
+    try:
 
-    image = data["image"]
-    emp_id = data["emp_id"]
+        data = request.get_json()
 
-    image = image.split(",")[1]
+        emp_id = data["emp_id"]
+        image = data["image"]
+        descriptor = data["descriptor"]
 
-    image_bytes = base64.b64decode(image)
 
-    os.makedirs("faces", exist_ok=True)
+        # Remove base64 header
+        image = image.split(",")[1]
 
-    with open(f"faces/{emp_id}.jpg", "wb") as file:
-        file.write(image_bytes)
-    
-    with open("captured.jpg", "wb") as file:
-        file.write(image_bytes)
-    return jsonify({
-        "message": "Photo saved successfully!"
-    })
+        image_bytes = base64.b64decode(image)
+
+
+        # Create faces folder
+        os.makedirs("faces", exist_ok=True)
+
+
+        # Save employee face image
+        with open(f"faces/{emp_id}.jpg", "wb") as file:
+
+            file.write(image_bytes)
+
+
+        # Save face descriptor in database
+        conn = sqlite3.connect("attendance.db")
+
+        cursor = conn.cursor()
+
+
+        cursor.execute(
+            """
+            UPDATE employees
+            SET face_descriptor = ?
+            WHERE emp_id = ?
+            """,
+            (
+                str(descriptor),
+                emp_id
+            )
+        )
+
+
+        conn.commit()
+
+        conn.close()
+
+
+        return jsonify({
+
+            "success": True,
+
+            "emp_id": emp_id,
+
+            "message": "Face registered successfully"
+
+        })
+
+
+    except Exception as e:
+
+        print("Save face error:", e)
+
+        return jsonify({
+
+            "success": False,
+
+            "message": str(e)
+
+        })
 
 @app.route("/employees")
 def employees():

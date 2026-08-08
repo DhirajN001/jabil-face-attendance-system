@@ -1,78 +1,362 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jabil Camera</title>
+
+    <title>Jabil Face Registration</title>
+
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
+        rel="stylesheet">
+
+    <script
+        defer
+        src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js">
+    </script>
+
 </head>
 
 <body>
-    {% include "navbar.html" %}
 
-    <h1>📷 Jabil Face Registration</h1>
+{% include "navbar.html" %}
 
-    <video id="video" width="640" height="480" autoplay></video>
+<div class="container mt-5">
 
-    <br><br>
+    <div class="card p-4 shadow">
 
-    <button onclick="startCamera()">Start Camera</button>
+        <h2 class="text-center mb-4">
+            📷 Jabil Face Registration
+        </h2>
+
+        <div class="mb-3">
+
+            <label class="form-label">
+                Employee ID
+            </label>
+
+            <input
+                type="text"
+                id="emp_id"
+                class="form-control"
+                placeholder="Example: VD10000618">
+
+        </div>
+
+        <div class="text-center">
+
+            <video
+                id="video"
+                width="640"
+                height="480"
+                autoplay
+                playsinline
+                muted
+                style="border:5px solid green;border-radius:10px;">
+            </video>
+
+        </div>
+
+        <div class="text-center mt-3">
+
+            <button
+                id="startBtn"
+                class="btn btn-primary"
+                onclick="startCamera()">
+
+                📷 Start Camera
+
+            </button>
+
+            <button
+                id="captureBtn"
+                class="btn btn-success"
+                onclick="registerFace()"
+                disabled>
+
+                ✅ Register Face
+
+            </button>
+
+        </div>
+
+        <div
+            id="status"
+            class="mt-3 text-center">
+        </div>
+
+        <canvas
+            id="canvas"
+            width="640"
+            height="480"
+            style="display:none;">
+        </canvas>
+
+    </div>
+
+</div>
 
 
+<script>
 
-    <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
+let cameraStarted = false;
 
-    <script>
 
-        async function startCamera() {
-    
-            const stream = await navigator.mediaDevices.getUserMedia({
+// =====================================
+// LOAD FACE MODELS
+// =====================================
+
+async function loadModels() {
+
+    document.getElementById("status").innerHTML = `
+        <div class="alert alert-info">
+            ⏳ Loading face recognition models...
+        </div>
+    `;
+
+    await faceapi.nets.tinyFaceDetector.loadFromUri(
+        "/static/models"
+    );
+
+    await faceapi.nets.faceLandmark68Net.loadFromUri(
+        "/static/models"
+    );
+
+    await faceapi.nets.faceRecognitionNet.loadFromUri(
+        "/static/models"
+    );
+
+    console.log("Face models loaded");
+
+}
+
+
+// =====================================
+// START CAMERA
+// =====================================
+
+async function startCamera() {
+
+    const empId =
+        document.getElementById("emp_id").value.trim();
+
+    if (!empId) {
+
+        alert("Please enter Employee ID");
+
+        return;
+    }
+
+
+    try {
+
+        await loadModels();
+
+
+        const stream =
+            await navigator.mediaDevices.getUserMedia({
                 video: true
             });
-    
-            document.getElementById("video").srcObject = stream;
-    
-            setInterval(capturePhoto, 5000);
-    
+
+
+        document.getElementById("video").srcObject =
+            stream;
+
+
+        cameraStarted = true;
+
+
+        document.getElementById("captureBtn").disabled =
+            false;
+
+
+        document.getElementById("status").innerHTML = `
+            <div class="alert alert-success">
+                📷 Camera started successfully
+                <br>
+                Please look directly at the camera.
+            </div>
+        `;
+
+    }
+
+    catch(error) {
+
+        console.error(error);
+
+        document.getElementById("status").innerHTML = `
+            <div class="alert alert-danger">
+                ❌ Camera could not be started.
+                <br>
+                ${error.message}
+            </div>
+        `;
+
+    }
+
+}
+
+
+// =====================================
+// REGISTER FACE
+// =====================================
+
+async function registerFace() {
+
+    if (!cameraStarted) {
+
+        alert("Please start camera first");
+
+        return;
+    }
+
+
+    const empId =
+        document.getElementById("emp_id").value.trim();
+
+
+    if (!empId) {
+
+        alert("Please enter Employee ID");
+
+        return;
+    }
+
+
+    const video =
+        document.getElementById("video");
+
+
+    document.getElementById("status").innerHTML = `
+        <div class="alert alert-info">
+            🔍 Detecting face...
+        </div>
+    `;
+
+
+    try {
+
+        const detection =
+            await faceapi
+                .detectSingleFace(
+                    video,
+                    new faceapi.TinyFaceDetectorOptions()
+                )
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+
+
+        if (!detection) {
+
+            document.getElementById("status").innerHTML = `
+                <div class="alert alert-danger">
+                    ❌ Face not detected.
+                    <br>
+                    Please look at the camera clearly.
+                </div>
+            `;
+
+            return;
         }
-    
-        async function capturePhoto() {
-    
-            const video = document.getElementById("video");
-            const canvas = document.getElementById("canvas");
-    
-            const context = canvas.getContext("2d");
-    
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-            const image = canvas.toDataURL("image/jpeg");
-    
-            const response = await fetch("/recognize", {
-    
+
+
+        // Face descriptor
+        const descriptor =
+            Array.from(detection.descriptor);
+
+
+        // Capture image
+        const canvas =
+            document.getElementById("canvas");
+
+        const context =
+            canvas.getContext("2d");
+
+
+        context.drawImage(
+            video,
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+
+        const image =
+            canvas.toDataURL("image/jpeg");
+
+
+        // Send to Flask
+        const response =
+            await fetch("/save_photo", {
+
                 method: "POST",
-    
+
                 headers: {
                     "Content-Type": "application/json"
                 },
-    
+
                 body: JSON.stringify({
-                    image: image
+
+                    emp_id: empId,
+
+                    image: image,
+
+                    descriptor: descriptor
+
                 })
-    
+
             });
-    
-            const result = await response.json();
-    
-            if (result.success) {
-    
-                alert(result.message);
-    
-            }
-    
+
+
+        const result =
+            await response.json();
+
+
+        if (result.success) {
+
+            document.getElementById("status").innerHTML = `
+                <div class="alert alert-success">
+
+                    <h4>✅ Face Registered Successfully</h4>
+
+                    <hr>
+
+                    Employee ID:
+                    <b>${result.emp_id}</b>
+
+                </div>
+            `;
+
         }
-    
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+
+        else {
+
+            document.getElementById("status").innerHTML = `
+                <div class="alert alert-danger">
+                    ❌ ${result.message}
+                </div>
+            `;
+
+        }
+
+    }
+
+    catch(error) {
+
+        console.error(error);
+
+        document.getElementById("status").innerHTML = `
+            <div class="alert alert-danger">
+                ❌ ${error.message}
+            </div>
+        `;
+
+    }
+
+}
+
+</script>
+
 </body>
 
 </html>
