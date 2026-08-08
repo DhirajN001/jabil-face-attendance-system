@@ -57,7 +57,7 @@ def recognize():
 
     with open("captured.jpg", "wb") as file:
         file.write(image_bytes)
-
+    os.makedirs("faces", exist_ok=True)
     for file_name in os.listdir("faces"):
 
         emp_id = file_name.replace(".jpg", "")
