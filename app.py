@@ -12,6 +12,38 @@ import pyttsx3
 app = Flask(__name__)
 app.secret_key = "jabil_face_attendance_2026"
 
+def init_database():
+
+    conn = sqlite3.connect("attendance.db")
+    cursor = conn.cursor()
+
+    # Employees table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS employees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            emp_id TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            department TEXT,
+            mobile TEXT
+        )
+    """)
+
+    # Attendance table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            emp_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            status TEXT NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+init_database()
+
+
 @app.route("/recognize", methods=["POST"])
 def recognize():
 
