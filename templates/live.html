@@ -11,9 +11,11 @@
 
     <!-- Face API -->
     <script
-        defer
+        
         src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js">
     </script>
+
+
 
 </head>
 
@@ -266,6 +268,122 @@ async function startRecognition() {
 // ===============================
 
 startSystem();
+
+<script>
+
+let video = document.getElementById("video");
+let status = document.getElementById("status");
+    
+    
+    // ===============================
+    // LOAD FACE API MODELS
+    // ===============================
+    
+    async function loadModels() {
+    
+        try {
+    
+            status.innerHTML = `
+                <div class="alert alert-info">
+                    ⏳ Loading face recognition models...
+                </div>
+            `;
+    
+            await faceapi.nets.tinyFaceDetector.loadFromUri(
+                "/static/models"
+            );
+    
+            await faceapi.nets.faceLandmark68Net.loadFromUri(
+                "/static/models"
+            );
+    
+            await faceapi.nets.faceRecognitionNet.loadFromUri(
+                "/static/models"
+            );
+    
+            console.log("Face models loaded successfully");
+    
+            status.innerHTML = `
+                <div class="alert alert-success">
+                    ✅ Face recognition models loaded.
+                    <br>
+                    📷 Starting camera...
+                </div>
+            `;
+    
+            startCamera();
+    
+        } catch (error) {
+    
+            console.error("Model loading error:", error);
+    
+            status.innerHTML = `
+                <div class="alert alert-danger">
+                    ❌ Failed to load face recognition models.
+                    <br>
+                    ${error}
+                </div>
+            `;
+        }
+    }
+    
+    
+    // ===============================
+    // START CAMERA
+    // ===============================
+    
+    async function startCamera() {
+    
+        try {
+    
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: 700,
+                    height: 480
+                },
+                audio: false
+            });
+    
+            video.srcObject = stream;
+    
+            status.innerHTML = `
+                <div class="alert alert-success">
+                    🟢 Camera started successfully.
+                    <br>
+                    👤 Looking for face...
+                </div>
+            `;
+    
+            console.log("Camera started");
+    
+        } catch (error) {
+    
+            console.error("Camera error:", error);
+    
+            status.innerHTML = `
+                <div class="alert alert-danger">
+                    ❌ Camera could not be started.
+                    <br>
+                    ${error}
+                </div>
+            `;
+        }
+    }
+    
+    
+    // ===============================
+    // START EVERYTHING
+    // ===============================
+    
+    window.addEventListener("load", function() {
+    
+        console.log("Starting face recognition...");
+    
+        loadModels();
+    
+    });
+    
+    </script>
 
 </script>
 
