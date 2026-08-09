@@ -63,221 +63,9 @@
 
 <script>
 
-let attendanceMarked = false;
-
-
-// ===============================
-// START CAMERA
-// ===============================
-
-async function startCamera() {
-
-    try {
-
-        const stream =
-            await navigator.mediaDevices.getUserMedia({
-                video: true
-            });
-
-        const video =
-            document.getElementById("video");
-
-        video.srcObject = stream;
-
-        document.getElementById("status").innerHTML = `
-            <div class="alert alert-success">
-                📷 Camera started successfully
-            </div>
-        `;
-
-    } catch (error) {
-
-        console.error(error);
-
-        document.getElementById("status").innerHTML = `
-            <div class="alert alert-danger">
-                ❌ Camera access failed
-            </div>
-        `;
-    }
-}
-
-
-// ===============================
-// LOAD FACE API MODELS
-// ===============================
-
-async function loadModels() {
-
-    document.getElementById("status").innerHTML = `
-        <div class="alert alert-info">
-            ⏳ Loading face recognition...
-        </div>
-    `;
-
-    await faceapi.nets.tinyFaceDetector.loadFromUri(
-        "/static/models"
-    );
-
-    await faceapi.nets.faceLandmark68Net.loadFromUri(
-        "/static/models"
-    );
-
-    await faceapi.nets.faceRecognitionNet.loadFromUri(
-        "/static/models"
-    );
-
-    console.log("Face models loaded");
-
-    document.getElementById("status").innerHTML = `
-        <div class="alert alert-success">
-            ✅ Face Recognition Ready
-        </div>
-    `;
-}
-
-
-// ===============================
-// START
-// ===============================
-
-async function startSystem() {
-
-    await loadModels();
-
-    await startCamera();
-
-    startRecognition();
-
-}
-
-
-// ===============================
-// FACE RECOGNITION
-// ===============================
-
-async function startRecognition() {
-
-    const video =
-        document.getElementById("video");
-
-    setInterval(async () => {
-
-        if (attendanceMarked) {
-            return;
-        }
-
-        const detection =
-            await faceapi
-                .detectSingleFace(
-                    video,
-                    new faceapi.TinyFaceDetectorOptions()
-                )
-                .withFaceLandmarks()
-                .withFaceDescriptor();
-
-        if (!detection) {
-
-            document.getElementById("status").innerHTML = `
-                <div class="alert alert-warning">
-                    👤 Face not detected
-                </div>
-            `;
-
-            return;
-        }
-
-        document.getElementById("status").innerHTML = `
-            <div class="alert alert-info">
-                🔍 Face detected. Checking...
-            </div>
-        `;
-
-
-        const descriptor =
-            Array.from(detection.descriptor);
-
-
-        // Send face descriptor to Flask
-
-        const response =
-            await fetch("/recognize_face", {
-
-                method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json"
-                },
-
-                body: JSON.stringify({
-                    descriptor: descriptor
-                })
-
-            });
-
-
-        const result =
-            await response.json();
-
-
-        if (result.success) {
-
-            attendanceMarked = true;
-
-
-            document.getElementById("status").innerHTML = `
-
-                <div class="alert alert-success">
-
-                    <h4>✅ Attendance Marked</h4>
-
-                    <hr>
-
-                    <h5>
-                        ${result.name}
-                    </h5>
-
-                    <p>
-                        Employee ID:
-                        <b>${result.emp_id}</b>
-                    </p>
-
-                    <p>
-                        Department:
-                        <b>${result.department}</b>
-                    </p>
-
-                    <p>
-                        Time:
-                        <b>${result.time}</b>
-                    </p>
-
-                </div>
-
-            `;
-
-        }
-
-    }, 3000);
-
-}
-
-
-// ===============================
-// RUN SYSTEM
-// ===============================
-
-startSystem();
-
-<script>
-
-let video = document.getElementById("video");
-let status = document.getElementById("status");
+    let video = document.getElementById("video");
+    let status = document.getElementById("status");
     
-    
-    // ===============================
-    // LOAD FACE API MODELS
-    // ===============================
     
     async function loadModels() {
     
@@ -289,19 +77,15 @@ let status = document.getElementById("status");
                 </div>
             `;
     
-            await faceapi.nets.tinyFaceDetector.loadFromUri(
-                "/static/models"
-            );
+            await faceapi.nets.tinyFaceDetector.loadFromUri("/static/models");
     
-            await faceapi.nets.faceLandmark68Net.loadFromUri(
-                "/static/models"
-            );
+            await faceapi.nets.faceLandmark68Net.loadFromUri("/static/models");
     
-            await faceapi.nets.faceRecognitionNet.loadFromUri(
-                "/static/models"
-            );
+            await faceapi.nets.faceRecognitionNet.loadFromUri("/static/models");
+    
     
             console.log("Face models loaded successfully");
+    
     
             status.innerHTML = `
                 <div class="alert alert-success">
@@ -311,7 +95,9 @@ let status = document.getElementById("status");
                 </div>
             `;
     
+    
             startCamera();
+    
     
         } catch (error) {
     
@@ -319,32 +105,33 @@ let status = document.getElementById("status");
     
             status.innerHTML = `
                 <div class="alert alert-danger">
-                    ❌ Failed to load face recognition models.
+                    ❌ Model loading failed.
                     <br>
                     ${error}
                 </div>
             `;
+    
         }
+    
     }
     
     
-    // ===============================
-    // START CAMERA
-    // ===============================
     
     async function startCamera() {
     
         try {
     
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: 700,
-                    height: 480
-                },
+    
+                video: true,
+    
                 audio: false
+    
             });
     
+    
             video.srcObject = stream;
+    
     
             status.innerHTML = `
                 <div class="alert alert-success">
@@ -354,11 +141,14 @@ let status = document.getElementById("status");
                 </div>
             `;
     
+    
             console.log("Camera started");
+    
     
         } catch (error) {
     
             console.error("Camera error:", error);
+    
     
             status.innerHTML = `
                 <div class="alert alert-danger">
@@ -367,25 +157,22 @@ let status = document.getElementById("status");
                     ${error}
                 </div>
             `;
+    
         }
+    
     }
     
     
-    // ===============================
-    // START EVERYTHING
-    // ===============================
     
     window.addEventListener("load", function() {
-    
-        console.log("Starting face recognition...");
     
         loadModels();
     
     });
     
-    </script>
-
 </script>
+
+
 
 </body>
 
