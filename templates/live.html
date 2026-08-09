@@ -5,7 +5,15 @@
 
     <title>Live Face Recognition</title>
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
+        rel="stylesheet">
+
+    <!-- Face API -->
+    <script
+        defer
+        src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js">
+    </script>
 
 </head>
 
@@ -24,17 +32,24 @@
         <video
             id="video"
             width="700"
+            height="480"
             autoplay
             playsinline
             muted
             style="border:5px solid green;border-radius:10px;">
         </video>
 
-        <div id="status" class="mt-3"></div>
+        <div id="status" class="mt-3">
+
+            <div class="alert alert-info">
+                📷 Starting camera...
+            </div>
+
+        </div>
 
         <canvas
             id="canvas"
-            width="640"
+            width="700"
             height="480"
             style="display:none;">
         </canvas>
@@ -43,127 +58,216 @@
 
 </div>
 
+
 <script>
 
 let attendanceMarked = false;
+
+
+// ===============================
+// START CAMERA
+// ===============================
 
 async function startCamera() {
 
     try {
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: true
-        });
+        const stream =
+            await navigator.mediaDevices.getUserMedia({
+                video: true
+            });
 
-        const video = document.getElementById("video");
+        const video =
+            document.getElementById("video");
 
         video.srcObject = stream;
 
-        await video.play();
-
-    }
-
-    catch(err){
-
-        alert("Camera Error : " + err.message);
-
-        console.log(err);
-
-    }
-
-}
-
-startCamera();
-
-async function recognizeFace() {
-
-    if(attendanceMarked){
-        return;
-    }
-
-    const video = document.getElementById("video");
-
-    const canvas = document.getElementById("canvas");
-
-    const context = canvas.getContext("2d");
-
-    context.drawImage(video,0,0,canvas.width,canvas.height);
-
-    const image = canvas.toDataURL("image/jpeg");
-
-    const response = await fetch("/recognize",{
-
-        method:"POST",
-
-        headers:{
-            "Content-Type":"application/json"
-        },
-
-        body:JSON.stringify({
-            image:image
-        })
-
-    });
-
-    const result = await response.json();
-
-    if(result.success){
-
-        attendanceMarked=true;
-
         document.getElementById("status").innerHTML = `
-
-        <div class="card mt-4 shadow">
-        
-            <div class="card-body text-center">
-        
-                <h3 class="text-success">
-                    ✅ ${result.message}
-                </h3>
-        
-                <hr>
-        
-                <h4>${result.name}</h4>
-        
-                <p>
-        
-                    <strong>Employee ID :</strong>
-        
-                    ${result.emp_id}
-        
-                </p>
-        
-                <p>
-        
-                    <strong>Department :</strong>
-        
-                    ${result.department}
-        
-                </p>
-        
-                <p>
-        
-                    <strong>Time :</strong>
-        
-                    ${result.time}
-        
-                </p>
-        
+            <div class="alert alert-success">
+                📷 Camera started successfully
             </div>
-        
-        </div>
-        
         `;
 
+    } catch (error) {
+
+        console.error(error);
+
+        document.getElementById("status").innerHTML = `
+            <div class="alert alert-danger">
+                ❌ Camera access failed
+            </div>
+        `;
     }
+}
+
+
+// ===============================
+// LOAD FACE API MODELS
+// ===============================
+
+async function loadModels() {
+
+    document.getElementById("status").innerHTML = `
+        <div class="alert alert-info">
+            ⏳ Loading face recognition...
+        </div>
+    `;
+
+    await faceapi.nets.tinyFaceDetector.loadFromUri(
+        "/static/models"
+    );
+
+    await faceapi.nets.faceLandmark68Net.loadFromUri(
+        "/static/models"
+    );
+
+    await faceapi.nets.faceRecognitionNet.loadFromUri(
+        "/static/models"
+    );
+
+    console.log("Face models loaded");
+
+    document.getElementById("status").innerHTML = `
+        <div class="alert alert-success">
+            ✅ Face Recognition Ready
+        </div>
+    `;
+}
+
+
+// ===============================
+// START
+// ===============================
+
+async function startSystem() {
+
+    await loadModels();
+
+    await startCamera();
+
+    startRecognition();
 
 }
 
-setInterval(recognizeFace,2000);
+
+// ===============================
+// FACE RECOGNITION
+// ===============================
+
+async function startRecognition() {
+
+    const video =
+        document.getElementById("video");
+
+    setInterval(async () => {
+
+        if (attendanceMarked) {
+            return;
+        }
+
+        const detection =
+            await faceapi
+                .detectSingleFace(
+                    video,
+                    new faceapi.TinyFaceDetectorOptions()
+                )
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+
+        if (!detection) {
+
+            document.getElementById("status").innerHTML = `
+                <div class="alert alert-warning">
+                    👤 Face not detected
+                </div>
+            `;
+
+            return;
+        }
+
+        document.getElementById("status").innerHTML = `
+            <div class="alert alert-info">
+                🔍 Face detected. Checking...
+            </div>
+        `;
+
+
+        const descriptor =
+            Array.from(detection.descriptor);
+
+
+        // Send face descriptor to Flask
+
+        const response =
+            await fetch("/recognize_face", {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    descriptor: descriptor
+                })
+
+            });
+
+
+        const result =
+            await response.json();
+
+
+        if (result.success) {
+
+            attendanceMarked = true;
+
+
+            document.getElementById("status").innerHTML = `
+
+                <div class="alert alert-success">
+
+                    <h4>✅ Attendance Marked</h4>
+
+                    <hr>
+
+                    <h5>
+                        ${result.name}
+                    </h5>
+
+                    <p>
+                        Employee ID:
+                        <b>${result.emp_id}</b>
+                    </p>
+
+                    <p>
+                        Department:
+                        <b>${result.department}</b>
+                    </p>
+
+                    <p>
+                        Time:
+                        <b>${result.time}</b>
+                    </p>
+
+                </div>
+
+            `;
+
+        }
+
+    }, 3000);
+
+}
+
+
+// ===============================
+// RUN SYSTEM
+// ===============================
+
+startSystem();
 
 </script>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>
 
