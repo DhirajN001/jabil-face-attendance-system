@@ -220,7 +220,7 @@ def recognize_face():
 
         now = datetime.now()
         date = now.strftime("%Y-%m-%d")
-        time = now.strftime("%H:%M:%S")
+        time = now.strftime("%I:%M:%S %p")
 
         cursor.execute("""
             SELECT name, department
