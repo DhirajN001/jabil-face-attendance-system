@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 import ast
 import pandas as pd
+import json
 from flask import send_file
 
 
@@ -52,8 +53,9 @@ init_database()
 
 @app.route("/face_descriptors")
 def face_descriptors():
-    """Return registered face descriptors for browser-side face-api.js matching."""
+
     try:
+
         conn = sqlite3.connect("attendance.db")
         cursor = conn.cursor()
 
@@ -65,33 +67,67 @@ def face_descriptors():
         """)
 
         rows = cursor.fetchall()
+
         conn.close()
 
         result = []
 
         for emp_id, descriptor_text in rows:
-            try:
-                descriptor = ast.literal_eval(descriptor_text)
 
-                if isinstance(descriptor, (list, tuple)) and len(descriptor) > 0:
+            try:
+
+                # Descriptor saved using json.dumps()
+                descriptor = json.loads(descriptor_text)
+
+                # face-api.js descriptor = 128 values
+                if (
+                    isinstance(descriptor, list)
+                    and len(descriptor) == 128
+                ):
+
                     result.append({
                         "emp_id": emp_id,
-                        "descriptor": list(descriptor)
+                        "descriptor": descriptor
                     })
 
-            except (ValueError, SyntaxError, TypeError) as descriptor_error:
+                    print(
+                        f"Loaded face descriptor: {emp_id}"
+                    )
+
+                else:
+
+                    print(
+                        f"Invalid descriptor length for {emp_id}: "
+                        f"{len(descriptor) if isinstance(descriptor, list) else 'invalid'}"
+                    )
+
+            except Exception as descriptor_error:
+
                 print(
                     f"Invalid face descriptor for {emp_id}: "
                     f"{descriptor_error}"
                 )
 
+        print(
+            "Total registered face descriptors:",
+            len(result)
+        )
+
         return jsonify(result)
 
     except Exception as e:
-        print("FACE DESCRIPTORS ERROR:", str(e))
+
+        print(
+            "FACE DESCRIPTORS ERROR:",
+            str(e)
+        )
+
         return jsonify({
+
             "success": False,
+
             "message": str(e)
+
         }), 500
 
 @app.route("/recognize_face", methods=["POST"])
@@ -143,9 +179,9 @@ def recognize_face():
 
         for emp_id, descriptor_text in rows:
             try:
-                stored = ast.literal_eval(descriptor_text)
+                stored = json.loads(descriptor_text)
 
-                if len(stored) != len(incoming):
+                if len(stored) != 128 or len(incoming) != 128:
                     continue
 
                 distance = sum(
@@ -527,28 +563,63 @@ def save_photo():
         image = data["image"]
         descriptor = data["descriptor"]
 
+        # -----------------------------
+        # Check descriptor
+        # -----------------------------
 
+        if not descriptor:
+            return jsonify({
+                "success": False,
+                "message": "Face descriptor is missing"
+            }), 400
+
+        # Convert descriptor to normal list
+        if hasattr(descriptor, "tolist"):
+            descriptor = descriptor.tolist()
+
+        # Make sure descriptor is a list
+        descriptor = list(descriptor)
+
+        # face-api.js descriptor should contain 128 values
+        if len(descriptor) != 128:
+
+            return jsonify({
+                "success": False,
+                "message": f"Invalid face descriptor. Expected 128 values, got {len(descriptor)}"
+            }), 400
+
+        # -----------------------------
         # Remove base64 header
-        image = image.split(",")[1]
+        # -----------------------------
+
+        if "," in image:
+            image = image.split(",", 1)[1]
 
         image_bytes = base64.b64decode(image)
 
-
+        # -----------------------------
         # Create faces folder
+        # -----------------------------
+
         os.makedirs("faces", exist_ok=True)
 
-
+        # -----------------------------
         # Save employee face image
+        # -----------------------------
+
         with open(f"faces/{emp_id}.jpg", "wb") as file:
 
             file.write(image_bytes)
 
+        # -----------------------------
+        # Save descriptor
+        # -----------------------------
 
-        # Save face descriptor in database
+        descriptor_json = json.dumps(descriptor)
+
         conn = sqlite3.connect("attendance.db")
 
         cursor = conn.cursor()
-
 
         cursor.execute(
             """
@@ -557,16 +628,27 @@ def save_photo():
             WHERE emp_id = ?
             """,
             (
-                str(descriptor),
+                descriptor_json,
                 emp_id
             )
         )
 
-
         conn.commit()
+
+        # Check whether employee exists
+        if cursor.rowcount == 0:
+
+            conn.close()
+
+            return jsonify({
+                "success": False,
+                "message": f"Employee {emp_id} not found"
+            }), 404
 
         conn.close()
 
+        print(f"Face descriptor saved for {emp_id}")
+        print(f"Descriptor length: {len(descriptor)}")
 
         return jsonify({
 
@@ -578,7 +660,6 @@ def save_photo():
 
         })
 
-
     except Exception as e:
 
         print("Save face error:", e)
@@ -589,8 +670,9 @@ def save_photo():
 
             "message": str(e)
 
-        })
-
+        }), 500
+        
+        
 @app.route("/employees")
 def employees():
 
