@@ -9,11 +9,8 @@
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
         rel="stylesheet">
 
-    <!-- Face API -->
-    <script
-        
-        src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js">
-    </script>
+   
+   
 
 
 
@@ -66,55 +63,8 @@
     let video = document.getElementById("video");
     let status = document.getElementById("status");
     
-    
-    async function loadModels() {
-    
-        try {
-    
-            status.innerHTML = `
-                <div class="alert alert-info">
-                    ⏳ Loading face recognition models...
-                </div>
-            `;
-    
-            await faceapi.nets.tinyFaceDetector.loadFromUri("/static/models");
-    
-            await faceapi.nets.faceLandmark68Net.loadFromUri("/static/models");
-    
-            await faceapi.nets.faceRecognitionNet.loadFromUri("/static/models");
-    
-    
-            console.log("Face models loaded successfully");
-    
-    
-            status.innerHTML = `
-                <div class="alert alert-success">
-                    ✅ Face recognition models loaded.
-                    <br>
-                    📷 Starting camera...
-                </div>
-            `;
-    
-    
-            startCamera();
-    
-    
-        } catch (error) {
-    
-            console.error("Model loading error:", error);
-    
-            status.innerHTML = `
-                <div class="alert alert-danger">
-                    ❌ Model loading failed.
-                    <br>
-                    ${error}
-                </div>
-            `;
-    
-        }
-    
-    }
-    
+    let recognitionRunning = false;
+    let lastRecognition = "";
     
     
     async function startCamera() {
@@ -122,16 +72,11 @@
         try {
     
             const stream = await navigator.mediaDevices.getUserMedia({
-    
                 video: true,
-    
                 audio: false
-    
             });
     
-    
             video.srcObject = stream;
-    
     
             status.innerHTML = `
                 <div class="alert alert-success">
@@ -141,14 +86,13 @@
                 </div>
             `;
     
+            recognitionRunning = true;
     
-            console.log("Camera started");
-    
+            startRecognition();
     
         } catch (error) {
     
             console.error("Camera error:", error);
-    
     
             status.innerHTML = `
                 <div class="alert alert-danger">
@@ -159,18 +103,169 @@
             `;
     
         }
+    }
+    
+    
+    // ===============================
+    // FACE RECOGNITION
+    // ===============================
+    
+    async function recognizeFace() {
+    
+        if (!recognitionRunning) {
+            return;
+        }
+    
+        if (!video.videoWidth || !video.videoHeight) {
+            return;
+        }
+    
+        try {
+    
+            const canvas = document.getElementById("canvas");
+    
+            const context = canvas.getContext("2d");
+    
+            context.drawImage(
+                video,
+                0,
+                0,
+                canvas.width,
+                canvas.height
+            );
+    
+    
+            const image = canvas.toDataURL("image/jpeg", 0.8);
+    
+    
+            const response = await fetch("/recognize", {
+    
+                method: "POST",
+    
+                headers: {
+                    "Content-Type": "application/json"
+                },
+    
+                body: JSON.stringify({
+                    image: image
+                })
+    
+            });
+    
+    
+            const result = await response.json();
+    
+            console.log("Recognition result:", result);
+    
+    
+            if (result.success) {
+    
+                if (result.already) {
+    
+                    status.innerHTML = `
+                        <div class="alert alert-warning">
+    
+                            ⚠️ Attendance Already Marked
+    
+                            <br><br>
+    
+                            👤 Employee ID:
+                            <strong>${result.emp_id}</strong>
+    
+                            <br>
+    
+                            🧑 Name:
+                            <strong>${result.name}</strong>
+    
+                            <br>
+    
+                            🏢 Department:
+                            <strong>${result.department}</strong>
+    
+                            <br>
+    
+                            🕐 Time:
+                            <strong>${result.time}</strong>
+    
+                        </div>
+                    `;
+    
+                } else {
+    
+                    status.innerHTML = `
+                        <div class="alert alert-success">
+    
+                            ✅ Face Matched Successfully!
+    
+                            <br><br>
+    
+                            👤 Employee ID:
+                            <strong>${result.emp_id}</strong>
+    
+                            <br>
+    
+                            🧑 Name:
+                            <strong>${result.name}</strong>
+    
+                            <br>
+    
+                            🏢 Department:
+                            <strong>${result.department}</strong>
+    
+                            <br>
+    
+                            🕐 Time:
+                            <strong>${result.time}</strong>
+    
+                            <br><br>
+    
+                            🎉 Attendance Marked Successfully
+    
+                        </div>
+                    `;
+    
+                }
+    
+                // Stop repeated recognition after successful match
+                recognitionRunning = false;
+    
+            }
+    
+        } catch (error) {
+    
+            console.error("Recognition error:", error);
+    
+        }
     
     }
     
     
+    // ===============================
+    // RUN EVERY 5 SECONDS
+    // ===============================
+    
+    function startRecognition() {
+    
+        setInterval(() => {
+    
+            recognizeFace();
+    
+        }, 5000);
+    
+    }
+    
+    
+    // ===============================
+    // START CAMERA WHEN PAGE LOADS
+    // ===============================
     
     window.addEventListener("load", function() {
     
-        loadModels();
+        startCamera();
     
     });
     
-</script>
+    </script>
 
 
 
