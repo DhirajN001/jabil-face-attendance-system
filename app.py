@@ -165,6 +165,12 @@ def recognize_face():
 
         # Same starting threshold commonly used by face-api.js.
         MATCH_THRESHOLD = 0.60
+        
+        print("================================")
+        print("BEST EMPLOYEE:", best_emp_id)
+        print("BEST DISTANCE:", best_distance)
+        print("MATCH THRESHOLD:", MATCH_THRESHOLD)
+        print("================================")
 
         if best_emp_id is None or best_distance >= MATCH_THRESHOLD:
             conn.close()
