@@ -12,6 +12,10 @@ import pyttsx3
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
+import tensorflow as tf
+
+tf.config.set_visible_devices([], "GPU")
+
 app = Flask(__name__)
 app.secret_key = "jabil_face_attendance_2026"
 
@@ -95,106 +99,167 @@ def recognize_face():
 @app.route("/recognize", methods=["POST"])
 def recognize():
 
-    data = request.json
+    try:
 
-    image = data["image"]
+        data = request.get_json()
 
-    image = image.split(",")[1]
-
-    image_bytes = base64.b64decode(image)
-
-    with open("captured.jpg", "wb") as file:
-        file.write(image_bytes)
-    os.makedirs("faces", exist_ok=True)
-    for file_name in os.listdir("faces"):
-
-        emp_id = file_name.replace(".jpg", "")
-
-        result = DeepFace.verify(
-            img1_path="captured.jpg",
-            img2_path=f"faces/{file_name}",
-            detector_backend="opencv",
-            enforce_detection=False
-        )
-
-        if result["verified"]:
-
-            conn = sqlite3.connect("attendance.db")
-            cursor = conn.cursor()
-
-            now = datetime.now()
-
-            date = now.strftime("%Y-%m-%d")
-            time = now.strftime("%H:%M:%S")
-            
-            cursor.execute(
-                 """
-                 SELECT * FROM attendance
-                 WHERE emp_id = ? AND date = ?
-                 """,
-                 (emp_id, date)
-            )
-
-            existing = cursor.fetchone()
-
-            if existing:
-
-               cursor.execute(
-                    "SELECT name, department FROM employees WHERE emp_id=?",
-                    (emp_id,)
-                 )
-               employee = cursor.fetchone()
-                
-               conn.close()
-               return jsonify({
-                   "success": True,
-                   "already": True,
-                   "emp_id": emp_id,
-                   "name": employee[0],
-                   "department": employee[1],
-                   "time": time,
-                   "message": "Attendance already marked"
-               })
-            
-            
-            
-            cursor.execute(
-                """
-                INSERT INTO attendance
-                (emp_id, date, time, status)
-                VALUES (?, ?, ?, ?)
-                """,
-                (emp_id, date, time, "Present")
-            )
-
-            conn.commit()
-            conn.close()
-            
-            engine = pyttsx3.init()
-            engine.say(f"Welcome {emp_id}")
-            engine.say("Attendance Marked Successfully")
-            engine.runAndWait()
-
-            cursor = sqlite3.connect("attendance.db").cursor()
-            cursor.execute(
-                "SELECT name, department FROM employees WHERE emp_id=?",
-                (emp_id,)
-            )
-            employee = cursor.fetchone()
+        if not data or "image" not in data:
             return jsonify({
-                "success": True,
-                "already": False,
-                "emp_id": emp_id,
-                "name": employee[0],
-                "department": employee[1],
-                 "time": time,
-                "message": "Attendance Marked Successfully"
-            })
-            
-    return jsonify({
-        "success": False
-    })
+                "success": False,
+                "message": "Image not received"
+            }), 400
 
+        image = data["image"]
+
+        # Remove base64 header
+        if "," in image:
+            image = image.split(",", 1)[1]
+
+        image_bytes = base64.b64decode(image)
+
+        # Save captured image
+        captured_path = "captured.jpg"
+
+        with open(captured_path, "wb") as file:
+            file.write(image_bytes)
+
+        # Make sure faces directory exists
+        os.makedirs("faces", exist_ok=True)
+
+        face_files = os.listdir("faces")
+
+        if not face_files:
+            return jsonify({
+                "success": False,
+                "message": "No registered faces found"
+            })
+
+        # Check every registered face
+        for file_name in face_files:
+
+            if not file_name.lower().endswith((".jpg", ".jpeg", ".png")):
+                continue
+
+            emp_id = os.path.splitext(file_name)[0]
+
+            face_path = os.path.join("faces", file_name)
+
+            print("Checking face:", emp_id)
+
+            result = DeepFace.verify(
+                img1_path=captured_path,
+                img2_path=face_path,
+                detector_backend="opencv",
+                enforce_detection=False
+            )
+
+            print("Verification result:", result["verified"])
+
+            if result["verified"]:
+
+                conn = sqlite3.connect("attendance.db")
+                cursor = conn.cursor()
+
+                now = datetime.now()
+
+                date = now.strftime("%Y-%m-%d")
+                time = now.strftime("%H:%M:%S")
+
+                # Check today's attendance
+                cursor.execute(
+                    """
+                    SELECT *
+                    FROM attendance
+                    WHERE emp_id = ? AND date = ?
+                    """,
+                    (emp_id, date)
+                )
+
+                existing = cursor.fetchone()
+
+                # Get employee information
+                cursor.execute(
+                    """
+                    SELECT name, department
+                    FROM employees
+                    WHERE emp_id = ?
+                    """,
+                    (emp_id,)
+                )
+
+                employee = cursor.fetchone()
+
+                if employee is None:
+
+                    conn.close()
+
+                    return jsonify({
+                        "success": False,
+                        "message": f"Employee {emp_id} not found"
+                    }), 404
+
+                name = employee[0]
+                department = employee[1]
+
+                # Already marked
+                if existing:
+
+                    conn.close()
+
+                    return jsonify({
+                        "success": True,
+                        "already": True,
+                        "emp_id": emp_id,
+                        "name": name,
+                        "department": department,
+                        "time": time,
+                        "message": "Attendance already marked"
+                    })
+
+                # Mark attendance
+                cursor.execute(
+                    """
+                    INSERT INTO attendance
+                    (emp_id, date, time, status)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (emp_id, date, time, "Present")
+                )
+
+                conn.commit()
+                conn.close()
+
+                # DO NOT USE pyttsx3 on Render
+                print(
+                    f"Attendance marked successfully: "
+                    f"{emp_id} - {name}"
+                )
+
+                return jsonify({
+                    "success": True,
+                    "already": False,
+                    "emp_id": emp_id,
+                    "name": name,
+                    "department": department,
+                    "time": time,
+                    "message": "Attendance Marked Successfully"
+                })
+
+        # No face matched
+        return jsonify({
+            "success": False,
+            "message": "Face not recognized"
+        })
+
+    except Exception as e:
+
+        print("RECOGNIZE ERROR:", str(e))
+
+        return jsonify({
+            "success": False,
+            "message": "Recognition failed",
+            "error": str(e)
+        }), 500
 
 @app.route("/camera")
 def camera():
@@ -212,7 +277,7 @@ def do_login():
     username = request.form["username"]
     password = request.form["password"]
 
-    if username == "admin" and password == "admin123":
+    if username == "admin" and password == "Dhiraj123":
 
         session["user"] = username
 
