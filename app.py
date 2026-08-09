@@ -291,7 +291,7 @@ def do_login():
     username = request.form["username"]
     password = request.form["password"]
 
-    if username == "admin" and password == "Dhiraj123":
+    if username == "admin" and password == "admin123":
 
         session["user"] = username
 
