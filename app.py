@@ -1,20 +1,14 @@
 
 from flask import Flask, render_template, request, redirect, jsonify, session
-from deepface import DeepFace
 import base64
 import sqlite3
 from datetime import datetime
 import os
+import ast
 import pandas as pd
 from flask import send_file
-import pyttsx3
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-import tensorflow as tf
-
-tf.config.set_visible_devices([], "GPU")
 
 app = Flask(__name__)
 app.secret_key = "jabil_face_attendance_2026"
@@ -56,210 +50,230 @@ def init_database():
     conn.close()
 init_database()
 
-@app.route("/recognize_face", methods=["POST"])
-def recognize_face():
-
+@app.route("/face_descriptors")
+def face_descriptors():
+    """Return registered face descriptors for browser-side face-api.js matching."""
     try:
+        conn = sqlite3.connect("attendance.db")
+        cursor = conn.cursor()
 
-        data = request.json
+        cursor.execute("""
+            SELECT emp_id, face_descriptor
+            FROM employees
+            WHERE face_descriptor IS NOT NULL
+              AND face_descriptor != ''
+        """)
 
-        descriptor = data["descriptor"]
+        rows = cursor.fetchall()
+        conn.close()
 
-        # Existing employee face files
-        for file_name in os.listdir("faces"):
+        result = []
 
-            if not file_name.lower().endswith(".jpg"):
-                continue
+        for emp_id, descriptor_text in rows:
+            try:
+                descriptor = ast.literal_eval(descriptor_text)
 
-            emp_id = file_name.rsplit(".", 1)[0]
+                if isinstance(descriptor, (list, tuple)) and len(descriptor) > 0:
+                    result.append({
+                        "emp_id": emp_id,
+                        "descriptor": list(descriptor)
+                    })
 
-            # Temporary response for testing
-            # Actual descriptor comparison will be added next
+            except (ValueError, SyntaxError, TypeError) as descriptor_error:
+                print(
+                    f"Invalid face descriptor for {emp_id}: "
+                    f"{descriptor_error}"
+                )
 
-            return jsonify({
-                "success": False,
-                "message": "Face recognition setup is ready"
-            })
-
-        return jsonify({
-            "success": False,
-            "message": "No employee face found"
-        })
+        return jsonify(result)
 
     except Exception as e:
-
-        print("Face recognition error:", e)
-
+        print("FACE DESCRIPTORS ERROR:", str(e))
         return jsonify({
             "success": False,
             "message": str(e)
-        })
+        }), 500
 
-
-@app.route("/recognize", methods=["POST"])
-def recognize():
-
+@app.route("/recognize_face", methods=["POST"])
+def recognize_face():
+    """
+    Browser-side face-api.js sends a 128-value face descriptor.
+    Server only compares it with descriptors stored in SQLite.
+    No DeepFace/TensorFlow processing is used here.
+    """
     try:
-
         data = request.get_json()
 
-        if not data or "image" not in data:
+        if not data or "descriptor" not in data:
             return jsonify({
                 "success": False,
-                "message": "Image not received"
+                "message": "Face descriptor not received"
             }), 400
 
-        image = data["image"]
+        incoming = data["descriptor"]
 
-        # Remove base64 header
-        if "," in image:
-            image = image.split(",", 1)[1]
-
-        image_bytes = base64.b64decode(image)
-
-        # Save captured image
-        captured_path = "captured.jpg"
-
-        with open(captured_path, "wb") as file:
-            file.write(image_bytes)
-
-        # Make sure faces directory exists
-        os.makedirs("faces", exist_ok=True)
-
-        face_files = os.listdir("faces")
-
-        if not face_files:
+        if not isinstance(incoming, list) or len(incoming) == 0:
             return jsonify({
                 "success": False,
-                "message": "No registered faces found"
+                "message": "Invalid face descriptor"
+            }), 400
+
+        conn = sqlite3.connect("attendance.db")
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT emp_id, face_descriptor
+            FROM employees
+            WHERE face_descriptor IS NOT NULL
+              AND face_descriptor != ''
+        """)
+
+        rows = cursor.fetchall()
+
+        if not rows:
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "No registered face descriptors found"
             })
 
-        # Check every registered face
-        for file_name in face_files:
+        # Euclidean distance between two face-api.js 128-D descriptors.
+        best_emp_id = None
+        best_distance = float("inf")
 
-            if not file_name.lower().endswith((".jpg", ".jpeg", ".png")):
-                continue
+        for emp_id, descriptor_text in rows:
+            try:
+                stored = ast.literal_eval(descriptor_text)
 
-            emp_id = os.path.splitext(file_name)[0]
+                if len(stored) != len(incoming):
+                    continue
 
-            face_path = os.path.join("faces", file_name)
+                distance = sum(
+                    (float(incoming[i]) - float(stored[i])) ** 2
+                    for i in range(len(incoming))
+                ) ** 0.5
 
-            print("Checking face:", emp_id)
+                if distance < best_distance:
+                    best_distance = distance
+                    best_emp_id = emp_id
 
-            result = DeepFace.verify(
-                img1_path=captured_path,
-                img2_path=face_path,
-                detector_backend="opencv",
-                enforce_detection=False
-            )
-
-            print("Verification result:", result["verified"])
-
-            if result["verified"]:
-
-                conn = sqlite3.connect("attendance.db")
-                cursor = conn.cursor()
-
-                now = datetime.now()
-
-                date = now.strftime("%Y-%m-%d")
-                time = now.strftime("%H:%M:%S")
-
-                # Check today's attendance
-                cursor.execute(
-                    """
-                    SELECT *
-                    FROM attendance
-                    WHERE emp_id = ? AND date = ?
-                    """,
-                    (emp_id, date)
-                )
-
-                existing = cursor.fetchone()
-
-                # Get employee information
-                cursor.execute(
-                    """
-                    SELECT name, department
-                    FROM employees
-                    WHERE emp_id = ?
-                    """,
-                    (emp_id,)
-                )
-
-                employee = cursor.fetchone()
-
-                if employee is None:
-
-                    conn.close()
-
-                    return jsonify({
-                        "success": False,
-                        "message": f"Employee {emp_id} not found"
-                    }), 404
-
-                name = employee[0]
-                department = employee[1]
-
-                # Already marked
-                if existing:
-
-                    conn.close()
-
-                    return jsonify({
-                        "success": True,
-                        "already": True,
-                        "emp_id": emp_id,
-                        "name": name,
-                        "department": department,
-                        "time": time,
-                        "message": "Attendance already marked"
-                    })
-
-                # Mark attendance
-                cursor.execute(
-                    """
-                    INSERT INTO attendance
-                    (emp_id, date, time, status)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (emp_id, date, time, "Present")
-                )
-
-                conn.commit()
-                conn.close()
-
-                # DO NOT USE pyttsx3 on Render
+            except (ValueError, SyntaxError, TypeError) as descriptor_error:
                 print(
-                    f"Attendance marked successfully: "
-                    f"{emp_id} - {name}"
+                    f"Invalid descriptor for {emp_id}: "
+                    f"{descriptor_error}"
                 )
 
-                return jsonify({
-                    "success": True,
-                    "already": False,
-                    "emp_id": emp_id,
-                    "name": name,
-                    "department": department,
-                    "time": time,
-                    "message": "Attendance Marked Successfully"
-                })
+        # Same starting threshold commonly used by face-api.js.
+        MATCH_THRESHOLD = 0.60
 
-        # No face matched
+        if best_emp_id is None or best_distance >= MATCH_THRESHOLD:
+            conn.close()
+
+            return jsonify({
+                "success": False,
+                "message": "Face not recognized",
+                "distance": best_distance
+                if best_emp_id is not None else None
+            })
+
+        now = datetime.now()
+        date = now.strftime("%Y-%m-%d")
+        time = now.strftime("%H:%M:%S")
+
+        cursor.execute("""
+            SELECT name, department
+            FROM employees
+            WHERE emp_id = ?
+        """, (best_emp_id,))
+
+        employee = cursor.fetchone()
+
+        if employee is None:
+            conn.close()
+
+            return jsonify({
+                "success": False,
+                "message": f"Employee {best_emp_id} not found"
+            }), 404
+
+        name, department = employee
+
+        cursor.execute("""
+            SELECT *
+            FROM attendance
+            WHERE emp_id = ? AND date = ?
+        """, (best_emp_id, date))
+
+        existing = cursor.fetchone()
+
+        if existing:
+            conn.close()
+
+            return jsonify({
+                "success": True,
+                "already": True,
+                "emp_id": best_emp_id,
+                "name": name,
+                "department": department,
+                "time": time,
+                "distance": best_distance,
+                "message": "Attendance already marked"
+            })
+
+        cursor.execute("""
+            INSERT INTO attendance
+            (emp_id, date, time, status)
+            VALUES (?, ?, ?, ?)
+        """, (best_emp_id, date, time, "Present"))
+
+        conn.commit()
+        conn.close()
+
+        print(
+            f"Attendance marked successfully: "
+            f"{best_emp_id} - {name} "
+            f"(distance={best_distance:.4f})"
+        )
+
         return jsonify({
-            "success": False,
-            "message": "Face not recognized"
+            "success": True,
+            "already": False,
+            "emp_id": best_emp_id,
+            "name": name,
+            "department": department,
+            "time": time,
+            "distance": best_distance,
+            "message": "Attendance Marked Successfully"
         })
 
     except Exception as e:
-
-        print("RECOGNIZE ERROR:", str(e))
+        print("RECOGNIZE FACE ERROR:", str(e))
 
         return jsonify({
             "success": False,
             "message": "Recognition failed",
             "error": str(e)
         }), 500
+
+
+@app.route("/recognize", methods=["POST"])
+def recognize():
+    """
+    Backward-compatible endpoint.
+    The new live.html should send a face descriptor to /recognize_face.
+    This endpoint no longer runs DeepFace.
+    """
+    return jsonify({
+        "success": False,
+        "message": "Use /recognize_face with a face descriptor."
+    }), 400
+
+
+@app.route("/faces/<path:filename>")
+def serve_face(filename):
+    from flask import send_from_directory
+    return send_from_directory("faces", filename)
+
 
 @app.route("/camera")
 def camera():
@@ -336,33 +350,95 @@ def logout():
     
 @app.route("/mark_attendance", methods=["POST"])
 def mark_attendance():
+    try:
+        data = request.get_json()
 
-    from datetime import datetime
+        if not data or "emp_id" not in data:
+            return jsonify({
+                "success": False,
+                "message": "Employee ID not received"
+            }), 400
 
-    data = request.get_json()
+        emp_id = data["emp_id"]
 
-    emp_id = data["emp_id"]
+        now = datetime.now()
+        current_date = now.strftime("%Y-%m-%d")
+        current_time = now.strftime("%H:%M:%S")
 
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    current_time = datetime.now().strftime("%H:%M:%S")
+        conn = sqlite3.connect("attendance.db")
+        cursor = conn.cursor()
 
-    conn = sqlite3.connect("attendance.db")
-    cursor = conn.cursor()
+        cursor.execute("""
+            SELECT name, department
+            FROM employees
+            WHERE emp_id = ?
+        """, (emp_id,))
 
-    cursor.execute(
-        """
-        INSERT INTO attendance (emp_id, date, time, status)
-        VALUES (?, ?, ?, ?)
-        """,
-        (emp_id, current_date, current_time, "Present")
-    )
+        employee = cursor.fetchone()
 
-    conn.commit()
-    conn.close()
+        if employee is None:
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": f"Employee {emp_id} not found"
+            }), 404
 
-    return jsonify({
-        "message": "Attendance marked successfully!"
-    })
+        name, department = employee
+
+        cursor.execute("""
+            SELECT *
+            FROM attendance
+            WHERE emp_id = ? AND date = ?
+        """, (emp_id, current_date))
+
+        existing = cursor.fetchone()
+
+        if existing:
+            conn.close()
+
+            return jsonify({
+                "success": True,
+                "already": True,
+                "emp_id": emp_id,
+                "name": name,
+                "department": department,
+                "time": current_time,
+                "message": "Attendance already marked"
+            })
+
+        cursor.execute("""
+            INSERT INTO attendance
+            (emp_id, date, time, status)
+            VALUES (?, ?, ?, ?)
+        """, (emp_id, current_date, current_time, "Present"))
+
+        conn.commit()
+        conn.close()
+
+        print(
+            f"Attendance marked successfully: "
+            f"{emp_id} - {name}"
+        )
+
+        return jsonify({
+            "success": True,
+            "already": False,
+            "emp_id": emp_id,
+            "name": name,
+            "department": department,
+            "time": current_time,
+            "message": "Attendance Marked Successfully"
+        })
+
+    except Exception as e:
+        print("MARK ATTENDANCE ERROR:", str(e))
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
 @app.route("/attendance")
 def attendance():
 
